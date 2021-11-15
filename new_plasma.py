@@ -33,23 +33,6 @@ class StartNode:
         x, y = self._x, self._y
         return np.array([x, y])
 
-    #litt usikker om denne trengs
-    """ 
-    @source.setter
-    def source(self, new_source):
-        r0 = self.r0
-        x_new, y_new = new_source
-        old_angle = self.angle
-        angle = np.arccos(x_new/r0)
-        tol = 1e-10
-        if abs(old_angle - angle) >= tol:
-            angle = -angle
-
-        self.angle = angle
-
-        self._x, self._y = x_new, y_new
-    """
-
     @property
     def spin(self):
         return self._spin
@@ -61,11 +44,13 @@ class StartNode:
 class Particle:
     speed = 0.5
     def __init__(self, r0, r1):
-        angle = np.random.random()*2*np.pi
-        r = np.random.randint(r0, r1)
+        angle = np.random.uniform()*2*np.pi
+        r = np.random.uniform(r0, r1)
         self.x, self.y = r*np.cos(angle), r*np.sin(angle)
         self.vx, self.vy = np.cos(angle)*self.speed, np.sin(angle)*self.speed
 
+        self.r1 = r1
+        self._angle = angle
     
     @property
     def charge(self):
@@ -86,7 +71,8 @@ class Particle:
 
     @position.setter
     def position(self, new_position):
-        self.x, self.y = new_position
+        x, y = new_position
+        self.x, self.y = x, y
 
     def distanceParticles(self, other):
         x1, y1 = self.position
@@ -96,26 +82,24 @@ class Particle:
         else:
             x2, y2 = other
 
-        return (x1 - x2)**2 + (y1 - y2)**2
+        return np.sqrt((x1 - x2)**2 + (y1 - y2)**2)
 
     @property
     def distanceCenter(self):
         x, y = self.position
-        return x**2 + y**2
+        return np.sqrt(x**2 + y**2)
 
+    @property
+    def distanceEdge(self):
+        r1 = self.r1
+        x, y = self.position
 
-def findEfieldinapoint(r, Q, R):
-    x, y = r
-    V = np.zeros(np.shape(x))
-    for i in range(len(x.flat)):
-        r = np.array([x.flat[i], y.flat[i]])
-        V.flat[i] += sum(Q[j]/np.linalg.norm(r - R[j]) for j in range(len(Q)))
-    E = -np.array(np.gradient(V))
-    return E, V
+        return np.sqrt((x - r1)**2 + (y - r1)**2)
+
 
 
 class PlasmaBall:
-    maxBoltJump = np.sqrt(10000)
+    maxBoltJump = np.sqrt(1000)
     def __init__(self, r0, r1):
         self.r0, self.r1 = r0, r1
 
@@ -133,6 +117,8 @@ class PlasmaBall:
                 node.spin = -0.1
             new_source.append(node.source)
 
+        self.startnodes = startnodes
+
         return np.array(new_source)
 
     def moveParticles(self, dt):
@@ -146,11 +132,11 @@ class PlasmaBall:
 
             x, y = particle.position
 
-            if (x**2 + y**2) < r0 or (x**2 + y**2) > r1:
+            if (x**2 + y**2) <= r0**2 or (x**2 + y**2) >= r1**2:
                 particle.velocity = -v
             
             new_position.append(particle.position)
-
+        self.particles = particles
         return np.array(new_position)
 
     def drawCenter(self):
@@ -173,11 +159,11 @@ class PlasmaBall:
 
         dist = 0
 
-        if (x**2 + y**2) == r1:
+        if (x**2 + y**2) == r1**2:
             return dist
 
         else:
-            return abs(x**2 + y**2 - r1)
+            return r1 - x**2 + y**2
 
     def distanceCenter(self, x, y):
         r1 = self.r1
@@ -207,41 +193,95 @@ class PlasmaBall:
         else:
             return False
 
-
-
     def drawBolt(self, startnode, particles):
+        r0, r1 = self.r0, self.r1
+        bolt = []
+        oldNearestParticle = 100000
+        boundryFound = False
+        bolt.append(startnode.source)
+        xold, yold = startnode.source
+        distanceCenter = r0
+        while not(boundryFound):
+            nearestParticle = 100000
+            for i, p in enumerate(particles):
+                distCenter = p.distanceCenter
+                if distCenter >= distanceCenter:
+                    distParticle = p.distanceParticles([xold, yold])
+                    if distParticle < self.maxBoltJump:
+                        if  distParticle < nearestParticle:
+                            print(i, distParticle, nearestParticle, distCenter, distanceCenter)
+                            nearestParticle = distParticle
+                            nextParticle = p
+                            nextIndex = i
+                            xold, yold = p.position
+
+            if oldNearestParticle == nearestParticle:
+                boundryFound = True
+            else:
+                oldNearestParticle = nearestParticle
+                distanceCenter = nextParticle.distanceCenter
+                bolt.append(nextParticle.position)
+                #self.particles.pop(nextIndex)
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        """
         r0, r1 = self.r0, self.r1
         path = []
         boundryFound = False
         x, y = startnode.source
-        #path.append(np.array([x, y]))
+        path.append(np.array([x, y]))
         start = True
         distanceCenter = 0
-        distanceEdge = 10000000000
+        distanceEdge = 0
         distanceEdgeCur = 0
         distanceEdgeLast = distanceEdge
-        """while True:
+        while True:
             lowestParticleDist = 1000000
             boundryFound = False
 
             for i, p in enumerate(particles):
                 dist = p.distanceParticles([x, y])
+                print(1, i)
 
                 if dist < lowestParticleDist:
-                    x1, y1 = p.position
+                    print(2, i)
                     distanceEdgeCur = self.distanceEdge(p)
                     if distanceEdgeCur <= distanceEdgeLast:
                         continue
+                    print(3, i)
                     if distanceEdgeCur > r1:
                         continue
-                    if dist > self.maxBoltJump:
+                    print(4, i)
+                    if dist > self.maxBoltJump**2:
                         continue
-                    if dist <= r0:
+                    print(5, i)
+                    if p.distanceCenter <= r0:
                         continue
-                    if distanceEdgeCur < r1/r0:
+                    print(6, i)
+                    if distanceEdgeCur < r1:
+                        print(7, i)
+                        x1, y1 = p.position
                         if self.checkIntersectCenter([x, x1], [y, y1]):
                             continue
-
+                    print(8, i)
                     lowestParticleDist = dist
                     distanceEdge = distanceEdgeCur
                     nextParticle = p
@@ -250,52 +290,57 @@ class PlasmaBall:
             
             if not(boundryFound):
                 break
-            
+            print(9, i)
             x, y = nextParticle.position
             path.append(np.array([x, y]))
             self.particles.pop(nextIndex)
             distanceEdgeLast = distanceEdge
         
-        path = np.array(path)
-        x, y = path[:, 0], path[:, 1]
-
-        plt.plot(x, y, c="red")"""
-
-
+        
         while not(boundryFound):
             lowestParticleDist = 1000000
             for i, p in enumerate(particles):
-                x1, y1 = p.position
                 if start:
                     dist = p.distanceParticles([x, y])
-                    if dist < self.maxBoltJump and dist < lowestParticleDist and not(self.checkIntersectCenter([x, x1], [y, y1])):
-                        start = False
-                        lowestParticleDist = dist
-                        path.append(np.array([x, y]))
-                        x, y = x1, y1
-                        self.particles.pop(i)
-                        distanceCenter = p.distanceCenter
-                        distanceEdge = self.distanceEdge(p)
+                    if dist < self.maxBoltJump:
+                        x1, y1 = p.position
+                        if dist < lowestParticleDist and not(self.checkIntersectCenter([x, x1], [y, y1])):
+                            start = False
+                            lowestParticleDist = dist
+                            #path.append(np.array([x, y]))
+                            x, y = x1, y1
+                            nextParticle = p
+                            nextIndex = i
+                            #self.particles.pop(i)
                 
                 elif not(start) and distanceCenter < p.distanceCenter:
+                    #print("in loop:", p.distanceCenter, "curr particle:", distanceCenter, "nr:", 1)
                     dist = p.distanceParticles([x, y])
-                    if dist < self.maxBoltJump and dist < lowestParticleDist and not(self.checkIntersectCenter([x, x1], [y, y1])):
-                        lowestParticleDist = dist
-                        path.append(np.array([x, y]))
-                        x, y = x1, y1
-                        self.particles.pop(i)
-                        distanceCenter = p.distanceCenter
-                        distanceEdge = self.distanceEdge(p)
-                
-                else:
-                    continue
+                    if dist < self.maxBoltJump:
+                        #print("in loop:", p.distanceCenter, "curr particle:", distanceCenter, "nr:", 2)
+                        x1, y1 = p.position
+                        if dist < lowestParticleDist and not(self.checkIntersectCenter([x, x1], [y, y1])):
+                            #print("in loop:", p.distanceCenter, "curr particle:", distanceCenter, "nr:", 3)
+                            lowestParticleDist = dist
+                            #path.append(np.array([x, y]))
+                            x, y = x1, y1
+                            nextParticle = p
+                            nextIndex = i
+                            #self.particles.pop(i)
+            
+            #path.append(nextParticle.position)
+            path.append(np.array([x, y]))
+            distanceCenter = nextParticle.distanceCenter
+            distanceEdge = self.distanceEdge(nextParticle)
+            self.particles.pop(nextIndex)
             
             if distanceEdgeLast == distanceEdge:
                 boundryFound = True
             else:
+                print(lowestParticleDist)
                 distanceEdgeLast = distanceEdge
-        
-        path = np.array(path)
+        """
+        path = np.array(bolt)
         x, y = path[:, 0], path[:, 1]
 
         bolt = plt.plot(x, y, c="red")
@@ -304,14 +349,23 @@ class PlasmaBall:
     def drawBall(self, animation = False):
         startnodes, particles = self.startnodes, self.particles
         bolts = []
+        oldparticles = particles.copy()
         for startnode in startnodes:
             startnodes, particles = self.startnodes, self.particles
             bolts.append(self.drawBolt(startnode, particles))
 
         center = self.drawCenter()
         outer = self.drawOuter()
+        self.particles = oldparticles
         if animation:
             return bolts, center, outer
+        else:
+            dt = 0.1
+            posP = self.moveParticles(dt)
+            posSN = self.moveStartNodes(dt)
+            #for testing
+            P = plt.scatter(posP[::, 0], posP[::, 1], c="g", s=0.1)
+            SN = plt.scatter(posSN[:, 0], posSN[:, 1])
 
     def initParticles(self, nParticles):
         r0, r1 = self.r0, self.r1
@@ -321,7 +375,6 @@ class PlasmaBall:
         
         return particles
         
-
     def initStartNodes(self, nStartNodes):
         r0 = self.r0
         startnodes = []
@@ -341,12 +394,18 @@ class PlasmaBall:
 
     def animate(self, i):
         plt.gca().clear()
+        plt.axis("off")
+        plt.axis("equal")
         dt = self.dt
         bolts, center, outer = self.drawBall(animation=True)
-        self.moveParticles(dt)
-        self.moveStartNodes(dt)
+        posP = self.moveParticles(dt)
+        posSN = self.moveStartNodes(dt)
+        #for testing
+        P = plt.scatter(posP[::, 0], posP[::, 1], c="g", s=0.1)
+        SN = plt.scatter(posSN[:, 0], posSN[:, 1])
 
-        return bolts[0], center, outer,
+
+        return center, outer, P, SN,
         
 
 
@@ -357,9 +416,9 @@ class PlasmaBall:
         self.dt = dt
 
         fig = plt.figure()
-        anim = animation.FuncAnimation(fig, self.animate, frames=N)
         plt.axis("off")
         plt.axis("equal")
+        anim = animation.FuncAnimation(fig, self.animate, frames=N)
         anim.save('figures/Plasma_ball.gif', writer='imagemagick')
 
 
@@ -369,13 +428,13 @@ if __name__ == "__main__":
     r1 = 150
     plasmaball = PlasmaBall(r0, r1)
 
-    nParticles = 10000
-    nStartNodes = 4  
+    nParticles = 400
+    nStartNodes = 1  
     plasmaball.initPlasma(nParticles, nStartNodes)  
 
-    dt = 0.001
-    N = 100 
-    plasmaball.initAnimation(nParticles, nStartNodes, dt, N)        
+    dt = 0.1
+    N = 100
+    #plasmaball.initAnimation(nParticles, nStartNodes, dt, N)
 
 
 
